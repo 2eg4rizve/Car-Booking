@@ -33,7 +33,7 @@ namespace Wafi.SampleTest.Controllers
 
         // POST: api/Bookings
         [HttpPost("Booking")]
-        public async Task<CreateUpdateBookingDto> PostBooking(CreateUpdateBookingDto booking)
+        public async Task<IActionResult> PostBooking([FromBody] CreateUpdateBookingDto bookingDto)
         {
             // TO DO: Validate if any booking time conflicts with existing data. Return error if any conflicts
 
@@ -41,8 +41,51 @@ namespace Wafi.SampleTest.Controllers
             //await _context.SaveChangesAsync();
 
             //return booking;
+            // Convert DTO to Entity
 
-            throw new NotImplementedException();
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+                return BadRequest(new { message = "Validation failed", errors });
+            }
+
+            // Validate if the booking time conflicts with existing bookings
+            var conflictingBooking = await _context.Bookings
+                .Where(b => b.CarId == bookingDto.CarId &&
+                            b.BookingDate == bookingDto.BookingDate &&
+                            ((b.StartTime < bookingDto.EndTime && b.EndTime > bookingDto.StartTime) ||
+                             (b.StartTime == bookingDto.StartTime && b.EndTime == bookingDto.EndTime)))
+                .FirstOrDefaultAsync();
+
+            if (conflictingBooking != null)
+            {
+                return BadRequest(new { message = "Booking time conflicts with an existing booking." });
+            }
+
+            // Convert DTO to Entity
+            var booking = new Booking
+            {
+                Id = Guid.NewGuid(),
+                BookingDate = bookingDto.BookingDate,
+                StartTime = bookingDto.StartTime,
+                EndTime = bookingDto.EndTime,
+                RepeatOption = bookingDto.RepeatOption,
+                EndRepeatDate = bookingDto.EndRepeatDate,
+                DaysToRepeatOn = bookingDto.DaysToRepeatOn,
+                RequestedOn = DateTime.UtcNow,
+                CarId = bookingDto.CarId
+            };
+
+            _context.Bookings.Add(booking);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Booking created successfully", bookingId = booking.Id });
+
+
+            //throw new NotImplementedException();
         }
 
         // GET: api/SeedData
