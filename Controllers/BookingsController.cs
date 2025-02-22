@@ -46,12 +46,10 @@ namespace Wafi.SampleTest.Controllers
 
             try
             {
-
-                // Get base bookings within the date range including Car details
                 var baseBookings = await _context.Bookings
-                    .Include(b => b.Car) // Include the Car navigation property
-                    .Where(b => b.CarId == input.CarId)
-                    .ToListAsync();
+                            .Include(b => b.Car)
+                            .Where(b => b.CarId == input.CarId)
+                            .ToListAsync();
 
                 var expandedBookings = new List<BookingCalendarDto>();
 
@@ -89,10 +87,18 @@ namespace Wafi.SampleTest.Controllers
                             {
                                 expandedBookings.Add(new BookingCalendarDto
                                 {
+                                    Id = booking.Id,
                                     BookingDate = currentDate,
                                     StartTime = booking.StartTime,
                                     EndTime = booking.EndTime,
-                                    CarModel = $"{booking.Car?.Make} {booking.Car?.Model}" // Combine make and model
+                                    CarModel = $"{booking.Car?.Make} {booking.Car?.Model}",
+                                    CarMake = booking.Car?.Make ?? "Unknown Make",
+                                   
+                                  
+                                    EndRepeatDate = booking.EndRepeatDate,
+                                    
+                                    RequestedOn = booking.RequestedOn,
+                                    CarId = booking.CarId
                                 });
                             }
                         }
@@ -107,7 +113,6 @@ namespace Wafi.SampleTest.Controllers
                 }
 
                 return Ok(expandedBookings);
-
 
 
             }
