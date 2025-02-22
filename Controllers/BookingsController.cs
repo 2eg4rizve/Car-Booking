@@ -145,10 +145,32 @@ namespace Wafi.SampleTest.Controllers
                 return BadRequest(new { message = "Validation failed", errors });
             }
 
-            // Validate if the booking time conflicts with existing bookings
+            Booking booking;
+            bool isNewBooking = false;
+
+            if (bookingDto.Id != Guid.Empty) // ID is provided -> Check if booking exists
+            {
+                booking = await _context.Bookings.FindAsync(bookingDto.Id);
+                if (booking == null)
+                {
+                    return NotFound(new { message = "Booking not found." });
+                }
+            }
+            else // ID not provided -> Create new booking
+            {
+                isNewBooking = true;
+                booking = new Booking
+                {
+                    Id = Guid.NewGuid(),
+                    RequestedOn = DateTime.UtcNow
+                };
+            }
+
+            // Validate if the booking time conflicts with existing bookings (excluding itself in update case)
             var conflictingBooking = await _context.Bookings
                 .Where(b => b.CarId == bookingDto.CarId &&
                             b.BookingDate == bookingDto.BookingDate &&
+                            b.Id != booking.Id && // Exclude itself in update case
                             ((b.StartTime < bookingDto.EndTime && b.EndTime > bookingDto.StartTime) ||
                              (b.StartTime == bookingDto.StartTime && b.EndTime == bookingDto.EndTime)))
                 .FirstOrDefaultAsync();
@@ -158,24 +180,31 @@ namespace Wafi.SampleTest.Controllers
                 return BadRequest(new { message = "Booking time conflicts with an existing booking." });
             }
 
-            // Convert DTO to Entity
-            var booking = new Booking
-            {
-                Id = Guid.NewGuid(),
-                BookingDate = bookingDto.BookingDate,
-                StartTime = bookingDto.StartTime,
-                EndTime = bookingDto.EndTime,
-                RepeatOption = bookingDto.RepeatOption,
-                EndRepeatDate = bookingDto.EndRepeatDate,
-                DaysToRepeatOn = bookingDto.DaysToRepeatOn,
-                RequestedOn = DateTime.UtcNow,
-                CarId = bookingDto.CarId
-            };
+            // Update booking details
+            booking.BookingDate = bookingDto.BookingDate;
+            booking.StartTime = bookingDto.StartTime;
+            booking.EndTime = bookingDto.EndTime;
+            booking.RepeatOption = bookingDto.RepeatOption;
+            booking.EndRepeatDate = bookingDto.EndRepeatDate;
+            booking.DaysToRepeatOn = bookingDto.DaysToRepeatOn;
+            booking.CarId = bookingDto.CarId;
 
-            _context.Bookings.Add(booking);
+            if (isNewBooking)
+            {
+                _context.Bookings.Add(booking);
+            }
+            else
+            {
+                _context.Bookings.Update(booking);
+            }
+
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Booking created successfully", bookingId = booking.Id });
+            return Ok(new
+            {
+                message = isNewBooking ? "Booking created successfully" : "Booking updated successfully",
+                bookingId = booking.Id
+            });
 
 
             //throw new NotImplementedException();
