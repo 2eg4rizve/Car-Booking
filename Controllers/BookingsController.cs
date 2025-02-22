@@ -19,8 +19,8 @@ namespace Wafi.SampleTest.Controllers
         }
 
         // GET: api/Bookings
-        [HttpGet("Booking")]
-        public async Task<IEnumerable<BookingCalendarDto>> GetCalendarBookings(BookingFilterDto input)
+        [HttpPost("GetCalendarBookings")]
+        public async Task<IActionResult> GetCalendarBookings([FromBody] BookingFilterDto input)
         {
             // Get booking from the database and filter the data
             //var bookings = await _context.Bookings.ToListAsync();
@@ -28,7 +28,50 @@ namespace Wafi.SampleTest.Controllers
             // TO DO: convert the database bookings to calendar view (date, start time, end time). Consiser NoRepeat, Daily and Weekly options
             //return bookings;
 
-            throw new NotImplementedException();
+            //throw new NotImplementedException();
+
+            if (input == null)
+            {
+                return BadRequest("Invalid input data.");
+            }
+
+            try
+            {
+                var bookings = await _context.Bookings
+    .Where(b => b.CarId == input.CarId &&
+                (b.RepeatOption == RepeatOption.DoesNotRepeat &&
+                 b.BookingDate >= input.StartBookingDate &&
+                 b.BookingDate <= input.EndBookingDate) ||
+                (b.RepeatOption == RepeatOption.Daily &&
+                 b.BookingDate >= input.StartBookingDate &&
+                 b.EndRepeatDate <= input.EndBookingDate) ||
+                (b.RepeatOption == RepeatOption.Weekly &&
+                 b.DaysToRepeatOn.HasValue && // Ensure it has a value
+                 b.EndRepeatDate <= input.EndBookingDate))
+    .Select(b => new BookingCalendarDto
+    {
+        BookingDate = b.BookingDate,
+        StartTime = b.StartTime,
+        EndTime = b.EndTime,
+        CarModel = "Car Model Placeholder" // Replace this with actual car model retrieval
+    })
+    .ToListAsync();
+
+
+                if (!bookings.Any())
+                {
+                    return NotFound("No bookings found for the given date range.");
+                }
+
+                return Ok(bookings);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal Server Error: {ex.Message}");
+            }
+
+
+
         }
 
         // POST: api/Bookings
