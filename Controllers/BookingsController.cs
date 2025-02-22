@@ -5,6 +5,15 @@ using System.Globalization;
 using Wafi.SampleTest.Dtos;
 using Wafi.SampleTest.Entities;
 
+
+using System;
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Wafi.SampleTest.Dtos;
+
 namespace Wafi.SampleTest.Controllers
 {
     [Route("api/[controller]")]
@@ -37,39 +46,77 @@ namespace Wafi.SampleTest.Controllers
 
             try
             {
-                var bookings = await _context.Bookings
-    .Where(b => b.CarId == input.CarId &&
-                (b.RepeatOption == RepeatOption.DoesNotRepeat &&
-                 b.BookingDate >= input.StartBookingDate &&
-                 b.BookingDate <= input.EndBookingDate) ||
-                (b.RepeatOption == RepeatOption.Daily &&
-                 b.BookingDate >= input.StartBookingDate &&
-                 b.EndRepeatDate <= input.EndBookingDate) ||
-                (b.RepeatOption == RepeatOption.Weekly &&
-                 b.DaysToRepeatOn.HasValue && // Ensure it has a value
-                 b.EndRepeatDate <= input.EndBookingDate))
-    .Select(b => new BookingCalendarDto
-    {
-        BookingDate = b.BookingDate,
-        StartTime = b.StartTime,
-        EndTime = b.EndTime,
-        CarModel = "Car Model Placeholder" // Replace this with actual car model retrieval
-    })
-    .ToListAsync();
 
 
-                if (!bookings.Any())
+                // Get base bookings within the date range
+                var baseBookings = await _context.Bookings
+                    .Where(b => b.CarId == input.CarId)
+                    .ToListAsync();
+
+                var expandedBookings = new List<BookingCalendarDto>();
+
+                foreach (var booking in baseBookings)
+                {
+                    // Handle different repeat options
+                    var currentDate = booking.BookingDate;
+                    var endRepeatDate = booking.EndRepeatDate ?? input.EndBookingDate;
+
+                    while (currentDate <= endRepeatDate && currentDate <= input.EndBookingDate)
+                    {
+                        if (currentDate >= input.StartBookingDate)
+                        {
+                            bool shouldInclude = false;
+
+                            switch (booking.RepeatOption)
+                            {
+                                case RepeatOption.DoesNotRepeat:
+                                    shouldInclude = (currentDate == booking.BookingDate);
+                                    break;
+
+                                case RepeatOption.Daily:
+                                    shouldInclude = true;
+                                    break;
+
+                                case RepeatOption.Weekly:
+                                    if (booking.DaysToRepeatOn.HasValue)
+                                    {
+                                        // Convert current date to DayOfWeek and then to our DaysOfWeek enum
+                                        var currentDayFlag = (DaysOfWeek)(1 << ((int)currentDate.DayOfWeek));
+                                        shouldInclude = (booking.DaysToRepeatOn.Value & currentDayFlag) != 0;
+                                    }
+                                    break;
+                            }
+
+                            if (shouldInclude)
+                            {
+                                expandedBookings.Add(new BookingCalendarDto
+                                {
+                                    BookingDate = currentDate,
+                                    StartTime = booking.StartTime,
+                                    EndTime = booking.EndTime,
+                                    CarModel = booking.Car?.Model ?? "Car Model Placeholder"
+                                });
+                            }
+                        }
+
+                        // Move to next day
+                        currentDate = currentDate.AddDays(1);
+                    }
+                }
+
+                if (!expandedBookings.Any())
                 {
                     return NotFound("No bookings found for the given date range.");
                 }
 
-                return Ok(bookings);
+                return Ok(expandedBookings);
+
+
             }
             catch (Exception ex)
             {
                 return StatusCode(500, $"Internal Server Error: {ex.Message}");
             }
-
 
 
         }
