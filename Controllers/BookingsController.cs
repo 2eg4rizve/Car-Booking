@@ -47,9 +47,9 @@ namespace Wafi.SampleTest.Controllers
             try
             {
 
-
-                // Get base bookings within the date range
+                // Get base bookings within the date range including Car details
                 var baseBookings = await _context.Bookings
+                    .Include(b => b.Car) // Include the Car navigation property
                     .Where(b => b.CarId == input.CarId)
                     .ToListAsync();
 
@@ -57,7 +57,6 @@ namespace Wafi.SampleTest.Controllers
 
                 foreach (var booking in baseBookings)
                 {
-                    // Handle different repeat options
                     var currentDate = booking.BookingDate;
                     var endRepeatDate = booking.EndRepeatDate ?? input.EndBookingDate;
 
@@ -80,7 +79,6 @@ namespace Wafi.SampleTest.Controllers
                                 case RepeatOption.Weekly:
                                     if (booking.DaysToRepeatOn.HasValue)
                                     {
-                                        // Convert current date to DayOfWeek and then to our DaysOfWeek enum
                                         var currentDayFlag = (DaysOfWeek)(1 << ((int)currentDate.DayOfWeek));
                                         shouldInclude = (booking.DaysToRepeatOn.Value & currentDayFlag) != 0;
                                     }
@@ -94,12 +92,11 @@ namespace Wafi.SampleTest.Controllers
                                     BookingDate = currentDate,
                                     StartTime = booking.StartTime,
                                     EndTime = booking.EndTime,
-                                    CarModel = booking.Car?.Model ?? "Car Model Placeholder"
+                                    CarModel = $"{booking.Car?.Make} {booking.Car?.Model}" // Combine make and model
                                 });
                             }
                         }
 
-                        // Move to next day
                         currentDate = currentDate.AddDays(1);
                     }
                 }
@@ -110,6 +107,7 @@ namespace Wafi.SampleTest.Controllers
                 }
 
                 return Ok(expandedBookings);
+
 
 
             }
