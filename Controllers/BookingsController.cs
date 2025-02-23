@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Wafi.SampleTest.Dtos;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Wafi.SampleTest.Controllers
 {
@@ -136,78 +137,137 @@ namespace Wafi.SampleTest.Controllers
             //return booking;
             // Convert DTO to Entity
 
-            if (!ModelState.IsValid)
-            {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
-                return BadRequest(new { message = "Validation failed", errors });
-            }
-
-            Booking booking;
-            bool isNewBooking = false;
-
-            if (bookingDto.Id != Guid.Empty) // ID is provided -> Check if booking exists
-            {
-                booking = await _context.Bookings.FindAsync(bookingDto.Id);
-                if (booking == null)
-                {
-                    return NotFound(new { message = "Booking not found." });
-                }
-            }
-            else // ID not provided -> Create new booking
-            {
-                isNewBooking = true;
-                booking = new Booking
-                {
-                    Id = Guid.NewGuid(),
-                    RequestedOn = DateTime.UtcNow
-                };
-            }
-
-            // Validate if the booking time conflicts with existing bookings (excluding itself in update case)
-            var conflictingBooking = await _context.Bookings
-                .Where(b => b.CarId == bookingDto.CarId &&
-                            b.BookingDate == bookingDto.BookingDate &&
-                            b.Id != booking.Id && // Exclude itself in update case
-                            ((b.StartTime < bookingDto.EndTime && b.EndTime > bookingDto.StartTime) ||
-                             (b.StartTime == bookingDto.StartTime && b.EndTime == bookingDto.EndTime)))
-                .FirstOrDefaultAsync();
-
-            if (conflictingBooking != null)
-            {
-                return BadRequest(new { message = "Booking time conflicts with an existing booking." });
-            }
-
-            // Update booking details
-            booking.BookingDate = bookingDto.BookingDate;
-            booking.StartTime = bookingDto.StartTime;
-            booking.EndTime = bookingDto.EndTime;
-            booking.RepeatOption = bookingDto.RepeatOption;
-            booking.EndRepeatDate = bookingDto.EndRepeatDate;
-            booking.DaysToRepeatOn = bookingDto.DaysToRepeatOn;
-            booking.CarId = bookingDto.CarId;
-
-            if (isNewBooking)
-            {
-                _context.Bookings.Add(booking);
-            }
-            else
-            {
-                _context.Bookings.Update(booking);
-            }
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new
-            {
-                message = isNewBooking ? "Booking created successfully" : "Booking updated successfully",
-                bookingId = booking.Id
-            });
-
-
             //throw new NotImplementedException();
+
+
+            try
+            {
+                if (bookingDto == null)
+                {
+                    return BadRequest(new { message = "Invalid request. Booking data is required." });
+                }
+
+                var validationErrors = new List<string>();
+
+                if (bookingDto.CarId == Guid.Empty)
+                    validationErrors.Add("CarId is required.");
+                if (bookingDto.BookingDate == default)
+                    validationErrors.Add("BookingDate is required.");
+                if (bookingDto.StartTime == default)
+                    validationErrors.Add("StartTime is required.");
+                if (bookingDto.EndTime == default)
+                    validationErrors.Add("EndTime is required.");
+                if (bookingDto.StartTime >= bookingDto.EndTime)
+                    validationErrors.Add("StartTime must be earlier than EndTime.");
+                if (bookingDto.RepeatOption != RepeatOption.DoesNotRepeat && bookingDto.EndRepeatDate == null)
+                    validationErrors.Add("EndRepeatDate is required for recurring bookings.");
+
+                if (validationErrors.Any())
+                {
+                    return BadRequest(new { message = "Validation failed.", errors = validationErrors });
+                }
+
+                // Check if ID is provided -> UPDATE existing booking
+                if (bookingDto.Id != Guid.Empty)
+                {
+                    var existingBooking = await _context.Bookings.FindAsync(bookingDto.Id);
+                    if (existingBooking == null)
+                    {
+                        return NotFound(new { message = "Booking not found." });
+                    }
+
+                    // Check for conflict with updated times
+                    bool conflictingBooking = await _context.Bookings
+                        .Where(b => b.CarId == bookingDto.CarId &&
+                                    b.Id != bookingDto.Id && // Ignore the current booking
+                                    b.BookingDate == bookingDto.BookingDate &&
+                                    ((b.StartTime < bookingDto.EndTime && b.EndTime > bookingDto.StartTime) ||
+                                     (b.StartTime == bookingDto.StartTime && b.EndTime == bookingDto.EndTime)))
+                        .AnyAsync();
+
+                    if (conflictingBooking)
+                    {
+                        return BadRequest(new { message = "Booking conflict detected." });
+                    }
+
+                    // Update the existing booking
+                    existingBooking.BookingDate = bookingDto.BookingDate;
+                    existingBooking.StartTime = bookingDto.StartTime;
+                    existingBooking.EndTime = bookingDto.EndTime;
+                    existingBooking.RepeatOption = bookingDto.RepeatOption;
+                    existingBooking.EndRepeatDate = bookingDto.EndRepeatDate;
+                    existingBooking.DaysToRepeatOn = bookingDto.DaysToRepeatOn;
+                    existingBooking.CarId = bookingDto.CarId;
+                    existingBooking.RequestedOn = DateTime.UtcNow;
+
+                    _context.Bookings.Update(existingBooking);
+                    await _context.SaveChangesAsync();
+
+                    return Ok(new { message = "Booking updated successfully.", bookingId = existingBooking.Id });
+                }
+
+                // If no ID provided, CREATE a new booking with recurrence logic
+                List<Booking> bookingsToAdd = new();
+                DateOnly currentBookingDate = bookingDto.BookingDate;
+
+                while (currentBookingDate <= bookingDto.EndRepeatDate)
+                {
+                    bool conflictingBooking = await _context.Bookings
+                        .Where(b => b.CarId == bookingDto.CarId &&
+                                    b.BookingDate == currentBookingDate &&
+                                    ((b.StartTime < bookingDto.EndTime && b.EndTime > bookingDto.StartTime) ||
+                                     (b.StartTime == bookingDto.StartTime && b.EndTime == bookingDto.EndTime)))
+                        .AnyAsync();
+
+                    if (conflictingBooking)
+                    {
+                        return BadRequest(new { message = $"Booking conflict on {currentBookingDate:yyyy-MM-dd}." });
+                    }
+
+                    bookingsToAdd.Add(new Booking
+                    {
+                        Id = Guid.NewGuid(),
+                        BookingDate = currentBookingDate,
+                        StartTime = bookingDto.StartTime,
+                        EndTime = bookingDto.EndTime,
+                        RepeatOption = bookingDto.RepeatOption,
+                        EndRepeatDate = bookingDto.EndRepeatDate,
+                        DaysToRepeatOn = bookingDto.DaysToRepeatOn,
+                        CarId = bookingDto.CarId,
+                        RequestedOn = DateTime.UtcNow
+                    });
+
+                    if (bookingDto.RepeatOption == RepeatOption.Daily)
+                    {
+                        currentBookingDate = currentBookingDate.AddDays(1);
+                    }
+                    else if (bookingDto.RepeatOption == RepeatOption.Weekly)
+                    {
+                        currentBookingDate = currentBookingDate.AddDays(7);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                await _context.Bookings.AddRangeAsync(bookingsToAdd);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Booking(s) created successfully.",
+                    bookingIds = bookingsToAdd.Select(b => b.Id)
+                });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                return StatusCode(500, new { message = "Database error occurred while saving the booking.", error = dbEx.InnerException?.Message ?? dbEx.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An unexpected error occurred.", error = ex.Message });
+            }
         }
 
         // GET: api/SeedData
