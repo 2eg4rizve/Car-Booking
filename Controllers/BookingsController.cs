@@ -50,10 +50,10 @@ namespace Wafi.SampleTest.Controllers
                 return BadRequest("Start date cannot be greater than end date.");
             }
 
-            if (input.CarId == Guid.Empty)
-            {
-                return BadRequest("CarId is required.");
-            }
+            //if (input.CarId == Guid.Empty)
+            //{
+            //    return BadRequest("CarId is required.");
+            //}
 
             
 
