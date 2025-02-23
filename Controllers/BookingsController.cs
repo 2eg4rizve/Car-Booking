@@ -59,11 +59,15 @@ namespace Wafi.SampleTest.Controllers
 
             try
             {
-                var baseBookings = await _context.Bookings
-                            .Include(b => b.Car)
-                            .Where(b => b.CarId == input.CarId)
-                            .ToListAsync();
+                var query = _context.Bookings.Include(b => b.Car).AsQueryable();
 
+                
+                if (input.CarId.HasValue)
+                {
+                    query = query.Where(b => b.CarId == input.CarId.Value);
+                }
+
+                var baseBookings = await query.ToListAsync();
                 var expandedBookings = new List<BookingCalendarDto>();
 
                 foreach (var booking in baseBookings)
@@ -104,14 +108,10 @@ namespace Wafi.SampleTest.Controllers
                                     BookingDate = currentDate,
                                     StartTime = booking.StartTime,
                                     EndTime = booking.EndTime,
-
                                     RepeatOption = booking.RepeatOption,
                                     EndRepeatDate = booking.EndRepeatDate,
-                                    DaysToRepeatOn =booking.DaysToRepeatOn,
-
-
+                                    DaysToRepeatOn = booking.DaysToRepeatOn,
                                     RequestedOn = booking.RequestedOn,
-
                                     CarId = booking.CarId,
                                     CarModel = $"{booking.Car?.Make} {booking.Car?.Model}",
                                     CarMake = booking.Car?.Make ?? "Unknown Make",
@@ -182,7 +182,7 @@ namespace Wafi.SampleTest.Controllers
                     return BadRequest(new { message = "Validation failed.", errors = validationErrors });
                 }
 
-                // Check if ID is provided -> UPDATE existing booking
+               
                 if (bookingDto.Id != Guid.Empty)
                 {
                     var existingBooking = await _context.Bookings.FindAsync(bookingDto.Id);
@@ -191,10 +191,10 @@ namespace Wafi.SampleTest.Controllers
                         return NotFound(new { message = "Booking not found." });
                     }
 
-                    // Check for conflict with updated times
+                   
                     bool conflictingBooking = await _context.Bookings
                         .Where(b => b.CarId == bookingDto.CarId &&
-                                    b.Id != bookingDto.Id && // Ignore the current booking
+                                    b.Id != bookingDto.Id && 
                                     b.BookingDate == bookingDto.BookingDate &&
                                     ((b.StartTime < bookingDto.EndTime && b.EndTime > bookingDto.StartTime) ||
                                      (b.StartTime == bookingDto.StartTime && b.EndTime == bookingDto.EndTime)))
@@ -205,7 +205,7 @@ namespace Wafi.SampleTest.Controllers
                         return BadRequest(new { message = "Booking conflict detected." });
                     }
 
-                    // Update the existing booking
+                    
                     existingBooking.BookingDate = bookingDto.BookingDate;
                     existingBooking.StartTime = bookingDto.StartTime;
                     existingBooking.EndTime = bookingDto.EndTime;
@@ -221,7 +221,7 @@ namespace Wafi.SampleTest.Controllers
                     return Ok(new { message = "Booking updated successfully.", bookingId = existingBooking.Id });
                 }
 
-                // If no ID provided, CREATE a new booking with recurrence logic
+                
                 List<Booking> bookingsToAdd = new();
                 DateOnly currentBookingDate = bookingDto.BookingDate;
 

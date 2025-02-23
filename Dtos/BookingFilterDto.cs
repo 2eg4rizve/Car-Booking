@@ -2,7 +2,7 @@
 {
     public class BookingFilterDto
     {
-        public Guid CarId { get; set; }
+        public Guid? CarId { get; set; }
         public DateOnly StartBookingDate { get; set; }
         public DateOnly EndBookingDate { get; set; }
     }
