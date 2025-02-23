@@ -6,14 +6,7 @@ using Wafi.SampleTest.Dtos;
 using Wafi.SampleTest.Entities;
 
 
-using System;
-using System.Globalization;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Wafi.SampleTest.Dtos;
-using Microsoft.IdentityModel.Tokens;
+
 
 namespace Wafi.SampleTest.Controllers
 {
@@ -28,7 +21,7 @@ namespace Wafi.SampleTest.Controllers
             _context = context;
         }
 
-        // GET: api/Bookings
+        // POST: api/Bookings
         [HttpPost("GetCalendarBookings")]
         public async Task<IActionResult> GetCalendarBookings([FromBody] BookingFilterDto input)
         {
