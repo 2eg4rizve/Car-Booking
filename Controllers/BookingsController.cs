@@ -45,6 +45,18 @@ namespace Wafi.SampleTest.Controllers
                 return BadRequest("Invalid input data.");
             }
 
+            if (input.StartBookingDate > input.EndBookingDate)
+            {
+                return BadRequest("Start date cannot be greater than end date.");
+            }
+
+            if (input.CarId == Guid.Empty)
+            {
+                return BadRequest("CarId is required.");
+            }
+
+            
+
             try
             {
                 var baseBookings = await _context.Bookings
@@ -92,14 +104,17 @@ namespace Wafi.SampleTest.Controllers
                                     BookingDate = currentDate,
                                     StartTime = booking.StartTime,
                                     EndTime = booking.EndTime,
+
+                                    RepeatOption = booking.RepeatOption,
+                                    EndRepeatDate = booking.EndRepeatDate,
+                                    DaysToRepeatOn =booking.DaysToRepeatOn,
+
+
+                                    RequestedOn = booking.RequestedOn,
+
+                                    CarId = booking.CarId,
                                     CarModel = $"{booking.Car?.Make} {booking.Car?.Model}",
                                     CarMake = booking.Car?.Make ?? "Unknown Make",
-                                   
-                                  
-                                    EndRepeatDate = booking.EndRepeatDate,
-                                    
-                                    RequestedOn = booking.RequestedOn,
-                                    CarId = booking.CarId
                                 });
                             }
                         }
